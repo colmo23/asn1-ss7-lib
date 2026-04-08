@@ -1,0 +1,44 @@
+-- Stub: CS2-datatypes (ETSI INAP CS2 / ITU-T Q.1228 datatypes)
+-- Types here are a subset also found in MAP-CommonDataTypes.
+CS2-datatypes {itu-t(0) identified-organization(4) etsi(0) inDomain(1) in-network(1)
+    cs2(20) modules(0) in-cs2-datatypes(0) version1(0)}
+DEFINITIONS IMPLICIT TAGS ::= BEGIN
+
+AddressString ::= OCTET STRING (SIZE(1..20))
+
+ISDN-AddressString ::= AddressString
+
+IMSI ::= OCTET STRING (SIZE(3..8))
+
+CellGlobalIdOrServiceAreaIdFixedLength ::= OCTET STRING (SIZE(7))
+
+LAIFixedLength ::= OCTET STRING (SIZE(5))
+
+Ext-BasicServiceCode ::= CHOICE {
+    ext-BearerService  [2] OCTET STRING (SIZE(1)),
+    ext-Teleservice    [3] OCTET STRING (SIZE(1))
+}
+
+GSN-Address ::= OCTET STRING (SIZE(5..17))
+
+RAIdentity ::= OCTET STRING (SIZE(6))
+
+NAEA-CIC ::= OCTET STRING (SIZE(3))
+
+-- CS1/CS2 shared types also imported by CAP-datatypes FROM CS2-datatypes
+BothwayThroughConnectionInd ::= ENUMERATED {
+    bothwayPathRequired    (0),
+    bothwayPathNotRequired (1)
+}
+
+CriticalityType ::= ENUMERATED {
+    ignore (0),
+    abort  (1)
+}
+
+MiscCallInfo ::= SEQUENCE {
+    messageType [0] ENUMERATED { request(0), notification(1) },
+    ...
+}
+
+END

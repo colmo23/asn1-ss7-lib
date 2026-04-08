@@ -1,0 +1,8 @@
+-- Stub: DirectoryAbstractService (X.511) types needed by INAP
+DirectoryAbstractService DEFINITIONS IMPLICIT TAGS ::= BEGIN
+SecurityParameters ::= SEQUENCE {
+    certification [0] ANY OPTIONAL,
+    signature     [1] ANY OPTIONAL,
+    ...
+}
+END

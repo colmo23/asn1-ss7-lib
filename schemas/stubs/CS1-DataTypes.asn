@@ -1,0 +1,25 @@
+-- Stub: CS1-DataTypes  (ETSI ETS 300 374-1, ITU-T Q.1218)
+CS1-DataTypes {itu-t(0) identified-organization(4) etsi(0) inDomain(1) in-network(1)
+    modules(0) cs1-datatypes(2) version1(0)}
+DEFINITIONS IMPLICIT TAGS ::= BEGIN
+
+Duration        ::= INTEGER (-2..86400)
+Integer4        ::= INTEGER (0..2147483647)
+Interval        ::= INTEGER (-1..60000)
+ServiceKey      ::= INTEGER (0..2147483647)
+
+LegType         ::= OCTET STRING (SIZE(1))
+
+LegID ::= CHOICE {
+    sendingSideID   [0] LegType,
+    receivingSideID [1] LegType
+}
+
+CallingPartysCategory   ::= OCTET STRING (SIZE(1))
+HighLayerCompatibility  ::= OCTET STRING (SIZE(2))
+RedirectionInformation  ::= OCTET STRING (SIZE(1..2))
+
+-- IN-SSF-SCF-datatypes also imports Integer4 from IN-common-datatypes;
+-- it actually comes from CS1. Keep it here for cross-module compatibility.
+
+END

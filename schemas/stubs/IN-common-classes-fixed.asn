@@ -1,0 +1,11 @@
+-- Patch: expose COMMON-BOUNDS derived types as constants
+-- (replaces the CLASS which was stripped)
+IN-common-classes-fixed {itu-t recommendation q 1248 modules(1) in-common-classes(4) version1(0)}
+DEFINITIONS IMPLICIT TAGS ::= BEGIN
+
+-- These are the concrete bounds used downstream
+numOfExtensions-upper INTEGER ::= 10
+numOfBCUSMEvents-upper INTEGER ::= 10
+numOfChargingEvents-upper INTEGER ::= 10
+
+END
