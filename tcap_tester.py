@@ -90,6 +90,25 @@ def cmd_generate(args):
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: generate-variants
+# ---------------------------------------------------------------------------
+
+def cmd_generate_variants(args):
+    schema = SchemaMessageFactory()
+    variants = schema.generate_optional_variants(protocol=args.protocol)
+
+    named = [(m.name, m.raw) for m in variants]
+    sender = FileSender(args.output, fmt=args.fmt)
+
+    if args.fmt == "pcap":
+        sender.write_pcap(named)
+    else:
+        sender.write_hex(named)
+
+    print(f"Generated {len(variants)} optional-field variant messages → {args.output}")
+
+
+# ---------------------------------------------------------------------------
 # Subcommand: send
 # ---------------------------------------------------------------------------
 
@@ -251,17 +270,25 @@ def main():
                      help="Messages per second (0=unlimited)")
     pst.add_argument("--protocol", choices=["map", "cap", "inap"])
 
+    # generate-variants
+    pv = sub.add_parser("generate-variants",
+                        help="Write messages with optional fields populated")
+    pv.add_argument("--output", default="variants.hex", help="Output file path")
+    pv.add_argument("--fmt", choices=["hex", "pcap"], default="hex")
+    pv.add_argument("--protocol", choices=["map", "cap", "inap"])
+
     # decode
     pd = sub.add_parser("decode", help="Inspect a hex-encoded TCAP message")
     pd.add_argument("hex", help="Hex string (spaces allowed)")
 
     args = p.parse_args()
     dispatch = {
-        "list":     cmd_list,
-        "generate": cmd_generate,
-        "send":     cmd_send,
-        "stress":   cmd_stress,
-        "decode":   cmd_decode,
+        "list":              cmd_list,
+        "generate":          cmd_generate,
+        "generate-variants": cmd_generate_variants,
+        "send":              cmd_send,
+        "stress":            cmd_stress,
+        "decode":            cmd_decode,
     }
     dispatch[args.cmd](args)
 

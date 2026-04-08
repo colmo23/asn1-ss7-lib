@@ -178,11 +178,17 @@ INAP_ARG_OPS: dict[str, tuple[int, str]] = {
 # Minimal value auto-generator
 # ---------------------------------------------------------------------------
 
-def _encode_arg(db, type_name: str) -> bytes | None:
+def _build_val(db, type_name: str, seed_val=None):
     """
-    Encode a minimal valid instance of type_name to BER.
+    Build a minimal valid value for type_name and encode it to BER.
 
-    Uses an error-driven fill strategy: start with an empty dict, catch
+    Returns (encoded_bytes, val) where val is the Python value that
+    produced the encoding.  Returns (None, seed_val) on failure.
+
+    seed_val: optional starting value (dict/tuple) — used to build on top
+    of an already-valid base when adding optional fields.
+
+    Uses an error-driven fill strategy: start with seed_val (or {}), catch
     encoder errors, add sensible defaults for missing/wrong-typed fields,
     and retry. Handles nested Sequences, Choice types, and Enumerations.
     Path-aware: correctly populates nested sub-dicts rather than the top level.
@@ -307,12 +313,15 @@ def _encode_arg(db, type_name: str) -> bytes | None:
 
     # -------------------------------------------------------------------------
 
-    val = {}
+    if seed_val is not None:
+        val = seed_val.copy() if isinstance(seed_val, dict) else seed_val
+    else:
+        val = {}
     seen_errors: set[str] = set()
 
     for _attempt in range(80):
         try:
-            return db.encode(type_name, val)
+            return db.encode(type_name, val), val
         except Exception as exc:
             msg = str(exc)
 
@@ -477,7 +486,63 @@ def _encode_arg(db, type_name: str) -> bytes | None:
                         continue
 
             break
-    return None
+    return None, val
+
+
+def _encode_arg(db, type_name: str) -> bytes | None:
+    """Encode a minimal valid BER instance of type_name. Returns bytes or None."""
+    result, _ = _build_val(db, type_name)
+    return result
+
+
+def _get_optional_members(compiled_type) -> list[str]:
+    """Return names of OPTIONAL members for a compiled Sequence type."""
+    inner = getattr(compiled_type, '_type', None)
+    if inner is None:
+        return []
+    members = getattr(inner, 'root_members', None) or []
+    return [m.name for m in members if getattr(m, 'optional', False)]
+
+
+def _default_for_field_name(name: str):
+    """Standalone field-name → default-value lookup (mirrors FIELD_DEFAULTS in _build_val)."""
+    FIELD_DEFAULTS = [
+        ('imsi',           b'\x00\x10\x10\x12\x34\x56\x78\x9f'),
+        ('msisdn',         b'\x91\x44\x97\x00\x00\x00'),
+        ('isdn',           b'\x91\x44\x97\x00\x00\x00'),
+        ('address',        b'\x91\x44\x97\x00\x00\x00'),
+        ('number',         b'\x91\x44\x97\x00\x00\x00'),
+        ('digits',         b'\x01\x21\x43\x65'),
+        ('cause',          b'\x80'),
+        ('reference',      b'\x00\x00'),
+        ('type',           0),
+        ('mode',           0),
+        ('category',       b'\x0a'),
+        ('indicator',      b'\x00'),
+        ('status',         0),
+        ('id',             0),
+        ('timer',          0),
+        ('class',          0),
+        ('code',           b'\x00'),
+        ('key',            0),
+        ('info',           b'\x00'),
+        ('data',           b'\x00'),
+        ('report',         0),
+        ('result',         0),
+        ('characteristic', b'\x00'),
+        ('charging',       b'\x00'),
+        ('send',           False),
+        ('forbidden',      False),
+        ('notification',   False),
+        ('complete',       False),
+        ('started',        False),
+        ('request',        False),
+    ]
+    nl = name.lower()
+    for key, dflt in FIELD_DEFAULTS:
+        if key in nl:
+            return dflt
+    return b'\x00'
 
 
 # ---------------------------------------------------------------------------
@@ -578,6 +643,75 @@ class SchemaMessageFactory:
                 op_name=type_name,
                 raw=raw,
             ))
+
+        return messages
+
+    def generate_optional_variants(self, protocol: str | None = None) -> list[SchemaMessage]:
+        """
+        For each Arg type with OPTIONAL fields, generate:
+          1. One variant with ALL optional fields populated at once.
+          2. One variant per individual optional field.
+
+        Each variant builds on the minimal mandatory-only encoding, then
+        adds the optional field(s) with sensible defaults (same error-driven
+        strategy used by _build_val).
+
+        Returns a list of SchemaMessage objects.
+        """
+        if not self.db:
+            return []
+
+        all_ops = {**MAP_ARG_OPS, **CAP_ARG_OPS, **INAP_ARG_OPS}
+        messages: list[SchemaMessage] = []
+
+        for mod_name, type_name, proto in self._arg_types:
+            if protocol and proto != protocol:
+                continue
+
+            op_info = all_ops.get(type_name)
+            if op_info is None:
+                base = re.sub(r'-v\d+$', '', type_name)
+                op_info = all_ops.get(base)
+            if op_info is None:
+                continue
+            op_code, ac_name = op_info
+
+            # Get the minimal mandatory-only val dict
+            compiled_type = self.db.modules[mod_name][type_name]
+            base_bytes, base_val = _build_val(self.db, type_name)
+            if base_bytes is None or not isinstance(base_val, dict):
+                continue
+
+            optional_fields = _get_optional_members(compiled_type)
+            if not optional_fields:
+                continue
+
+            def _make_variant(seed: dict, variant_label: str) -> None:
+                enc, _ = _build_val(self.db, type_name, seed_val=seed)
+                if enc is None:
+                    return
+                raw = self._build_begin(op_code, ac_name, enc, proto)
+                if raw is None:
+                    return
+                messages.append(SchemaMessage(
+                    name=f"{proto.upper()}-Variant-{type_name}-{variant_label}",
+                    protocol=proto,
+                    msg_type="begin",
+                    op_name=type_name,
+                    raw=raw,
+                ))
+
+            # 1. All optional fields at once
+            all_seed = dict(base_val)
+            for f in optional_fields:
+                all_seed[f] = _default_for_field_name(f)
+            _make_variant(all_seed, "AllOptionals")
+
+            # 2. One variant per optional field
+            for f in optional_fields:
+                per_seed = dict(base_val)
+                per_seed[f] = _default_for_field_name(f)
+                _make_variant(per_seed, f)
 
         return messages
 
