@@ -1,1 +1,5 @@
 venv
+.schema_cache.pkl
+__pycache__
+messages.hex
+messages.pcap

@@ -361,10 +361,9 @@ def _encode_arg(db, type_name: str) -> bytes | None:
                     inner = val[1] if isinstance(val, tuple) and len(val) == 2 else b'\x00'
                     val = (alt, inner)
                 elif not path:
-                    # Top-level but val is a dict — shouldn't happen, but handle
                     val = (alt, b'\x00')
                 else:
-                    # Nested Choice — path[-1] is the field name, path[:-1] is its parent
+                    # Nested Choice — path[-1] is the Choice field name.
                     parent_path = path[:-1]
                     field = path[-1]
                     container = _get_container(val, parent_path) if parent_path else val
@@ -374,6 +373,13 @@ def _encode_arg(db, type_name: str) -> bytes | None:
                             container[field] = (alt, cur[1])
                         else:
                             container[field] = (alt, b'\x00')
+                    elif isinstance(container, tuple) and len(container) == 2 and container[0] == field:
+                        # container is itself a Choice; update via grandparent
+                        gp_path = path[:-2]
+                        choice_key = path[-2] if len(path) >= 2 else None
+                        grandparent = _get_container(val, gp_path) if gp_path else val
+                        if choice_key and isinstance(grandparent, dict):
+                            grandparent[choice_key] = (field, (alt, b'\x00'))
                 continue
 
             # ---- "Expected data of type X, but got Y" ----
@@ -406,17 +412,26 @@ def _encode_arg(db, type_name: str) -> bytes | None:
                         continue
                 elif isinstance(container, tuple) and len(container) == 2 and container[0] == field:
                     # container is a Choice; path[-1] is the alt name.
-                    # Update its inner value via the grandparent dict.
+                    # Walk up the path to find the nearest mutable dict and reconstruct.
+                    # Example: path=['A','B','C'], field='C', container=val['A'][1]['B'][1]=('C', old)
+                    # We need val['A'] = ('B', ('C', new_val))  [depth-3]
+                    # Or val['A'] = ('B', new_val)              [depth-2]
                     gp_path = path[:-2]
                     choice_key = path[-2] if len(path) >= 2 else None
                     grandparent = _get_container(val, gp_path) if gp_path else val
                     if choice_key and isinstance(grandparent, dict):
                         grandparent[choice_key] = (field, new_val)
+                    elif choice_key and isinstance(grandparent, tuple) and len(grandparent) == 2:
+                        # Grandparent is also a Choice — go one more level up
+                        ggp_path = gp_path[:-1] if gp_path else []
+                        ggp_key = gp_path[-1] if gp_path else None
+                        ggp = _get_container(val, ggp_path) if ggp_path else val
+                        if ggp_key and isinstance(ggp, dict):
+                            ggp[ggp_key] = (grandparent[0], (field, new_val))
                     elif isinstance(val, tuple) and len(val) == 2:
                         val = (val[0], new_val)
                     continue
                 elif container is None and isinstance(val, tuple) and len(val) == 2:
-                    # Top-level tuple; update inner value
                     val = (val[0], new_val)
                 continue
 
